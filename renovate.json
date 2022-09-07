@@ -9,6 +9,19 @@
   ],
   "timezone": "Europe/Vienna",
   "assignees": ["mrdavidkovacs"],
-  "packageRules": [],
+  "packageRules": [
+    {
+      "updateTypes": ["minor", "patch", "pin", "digest"],
+      "matchPackagePatterns": ["*"],
+      "automerge": true,
+      "stabilityDays": 2
+    },
+    {
+      "updateTypes": ["major"],
+      "matchPackagePatterns": ["*"],
+      "automerge": false,
+      "stabilityDays": 5
+    }
+  ],
   "prHourlyLimit": 0
 }
