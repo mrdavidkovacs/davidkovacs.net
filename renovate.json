@@ -1,5 +1,14 @@
 {
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base"
-  ]
+    "config:base",
+    ":dependencyDashboard", 
+    ":rebaseStalePrs",
+    "group:monorepos",
+    "group:recommended"
+  ],
+  "timezone": "Europe/Vienna",
+  "assignees": ["mrdavidkovacs"],
+  "packageRules": [],
+  "prHourlyLimit": 0
 }
