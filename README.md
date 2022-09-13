@@ -1,2 +1,2 @@
 # davidkovacs.net
-Blog
+Blog is available on [davidkovacs.net](https://davidkovacs.net)
