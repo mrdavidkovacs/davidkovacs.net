@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Update dependencies with Renovate"
-date:   2027-09-13 17:00:00 +0200
+date:   2022-09-27 17:00:00 +0200
 categories: dependencies renovate
 ---
 
