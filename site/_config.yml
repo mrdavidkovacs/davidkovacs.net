@@ -37,6 +37,41 @@ minima:
   skin: dark
 plugins:
   - jekyll-feed
+  
+  
+# Set which comment system to use
+comments:
+  # 'disqus' / 'giscus' / 'utterances' are available
+  provider:            giscus
+
+# You must install giscus github app before use.(https://github.com/apps/giscus)
+# Make sure all variables are set properly. Check below link for detail.
+# https://giscus.vercel.app/
+giscus:
+  repo:                "mrdavidkovacs/davidkovacs.net"
+  repo-id:             "R_kgDOH8jSPw"
+  category:            "Announcements"
+  category-id:         "DIC_kwDOH8jSP84CSC5m"
+  mapping:             "pathname"
+  reaction-enabled:    "1"
+  theme:               "dark_dimmed"
+  crossorigin:         "anonymous"
+  
+  <script src="https://giscus.app/client.js"
+        data-repo="mrdavidkovacs/davidkovacs.net"
+        data-repo-id="R_kgDOH8jSPw"
+        data-category="Announcements"
+        data-category-id="DIC_kwDOH8jSP84CSC5m"
+        data-mapping="pathname"
+        data-strict="0"
+        data-reactions-enabled="1"
+        data-emit-metadata="0"
+        data-input-position="bottom"
+        data-theme="preferred_color_scheme"
+        data-lang="en"
+        crossorigin="anonymous"
+        async>
+</script>
 
 # Exclude from processing.
 # The following items will not be processed, by default.
