@@ -31,10 +31,9 @@ twitter_username: mr_david_kov
 github_username:  mrdavidkovacs
 
 # Build settings
-#theme: minima
-remote_theme: jekyll/minima
-minima:
-  skin: dark
+theme: minimal-mistakes-jekyll
+minimal_mistakes_skin: "dark" # "default" # "air", "aqua", "contrast", "dark", "dirt", "neon", "mint", "plum", "sunrise"
+
 plugins:
   - jekyll-feed
 
