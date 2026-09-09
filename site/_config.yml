@@ -21,10 +21,7 @@
 title: David Kovacs
 email: info@davidkovacs.net
 description: >- # this means to ignore newlines until "baseurl:"
-  Software Developer & Architect,
-  Dad of 2,
-  Star Wars fan,
-  Trekkie
+  Software developer & architect. Notes on software, systems, and learning in public.
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "https://davidkovacs.net" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username: mr_david_kov
