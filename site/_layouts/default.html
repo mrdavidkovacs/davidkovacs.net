@@ -6,12 +6,13 @@
     <meta name="description" content="{{ page.description | default: site.description | escape }}">
     <title>{% if page.title %}{{ page.title | escape }} · {% endif %}{{ site.title | escape }}</title>
     <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+    <link rel="icon" href="{{ '/assets/img/dk.svg' | relative_url }}" type="image/svg+xml">
     {% feed_meta %}
   </head>
   <body>
     <header class="site-header">
       <div class="wrapper">
-        <a class="site-title" href="{{ '/' | relative_url }}">{{ site.title | escape }}</a>
+        <a class="site-title" href="{{ '/' | relative_url }}"><img class="site-mark" src="{{ '/assets/img/dk.svg' | relative_url }}" alt="">{{ site.title | escape }}</a>
         <nav class="site-nav" aria-label="Primary navigation">
           <a class="page-link" href="{{ '/about/' | relative_url }}">About</a>
         </nav>

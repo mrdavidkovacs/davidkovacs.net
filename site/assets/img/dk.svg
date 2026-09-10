@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>David Kovacs</title>
+  <rect width="64" height="64" rx="18" fill="#15211f"/>
+  <path d="M18 14v36h11c11 0 18-7 18-18S40 14 29 14H18Zm9 8h2c6 0 10 4 10 10s-4 10-10 10h-2V22Z" fill="#c9f2d9"/>
+</svg>
