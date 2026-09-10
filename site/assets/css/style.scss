@@ -35,7 +35,8 @@ body {
   letter-spacing: -.03em;
 }
 .site-mark { width: 1.8rem; height: 1.8rem; }
-.site-nav .page-link { font-size: .9rem; }
+.site-nav { background: transparent; border: 0; }
+.site-nav .page-link { background: transparent; font-size: .9rem; }
 
 .hero, .notes {
   max-width: 1040px;
