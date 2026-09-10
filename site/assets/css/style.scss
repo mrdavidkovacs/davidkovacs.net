@@ -27,7 +27,14 @@ body {
 }
 
 .site-title, .site-nav .page-link { color: var(--ink); }
-.site-title { font-weight: 700; letter-spacing: -.03em; }
+.site-title {
+  display: inline-flex;
+  align-items: center;
+  gap: .6rem;
+  font-weight: 700;
+  letter-spacing: -.03em;
+}
+.site-mark { width: 1.8rem; height: 1.8rem; }
 .site-nav .page-link { font-size: .9rem; }
 
 .hero, .notes {
