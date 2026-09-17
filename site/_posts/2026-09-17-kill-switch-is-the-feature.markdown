@@ -2,52 +2,63 @@
 layout: post
 title: "The Kill Switch Is the Feature, Not the VPN"
 date: 2026-09-17 10:00:00 +0200
-categories: systems reliability
-excerpt: "A service which must use a VPN needs one important property: it must not use the ordinary network when the tunnel is unavailable."
+categories: systems reliability docker networking
+excerpt: "A Docker download stack using Gluetun, pyLoad, and qBittorrent needs one important property: the download clients must have no route when the VPN is unavailable."
 ---
 
-A service which should use a VPN must be able to reach the internet through the VPN. This is the obvious requirement. There is a second requirement which is at least as important: the service must not use the ordinary network when the VPN connection is unavailable.
+The download stack consists of three Docker containers: Gluetun provides the VPN connection, pyLoad handles regular downloads, and qBittorrent handles torrents. The requirement was simple: pyLoad and qBittorrent must not use the normal internet connection of the Docker host if the VPN connection fails.
 
-The VPN connection itself is therefore only a part of the solution. The more important part is the failure case.
+Establishing a VPN connection is not enough to meet this requirement. The relevant question is what happens after the VPN connection is lost.
 
 ## Initial situation
 
-The starting point was a small self-hosted service which should only communicate through a VPN connection. The service is useful only if this restriction is reliable. A normal network fallback would make the setup look operational while violating its actual purpose.
+Both download clients need outbound internet access, a shared download directory, and web interfaces reachable from the local network. They do not need their own network identity.
 
-The following requirement was defined:
+Giving each container its own Docker network and configuring the VPN as the preferred route would be easy. It would also leave every container with an independent route through the Docker host. A restart, DNS error, or routing mistake could therefore turn a VPN failure into ordinary internet traffic.
 
-> The service must be unavailable when the VPN connection is unavailable.
+The requirement was defined as follows:
 
-This is a deliberate trade-off. Availability is reduced in one failure case in order to retain the intended network boundary.
+> If Gluetun is not connected, pyLoad and qBittorrent must not be able to reach the internet.
 
-## Possible approaches
+## Shared network namespace
 
-There are several ways to connect a service to a VPN. The two relevant approaches were:
+Docker provides a fitting mechanism for this case. Instead of giving pyLoad and qBittorrent their own network configuration, both containers share Gluetun's network namespace:
 
-1. Give the service access to the normal network and configure the VPN as its preferred route.
-2. Give the service access only to a dedicated VPN gateway.
+```yaml
+services:
+  gluetun:
+    image: qmcgaw/gluetun
 
-The first approach is easier to set up. It also requires trusting the routing configuration in every failure case. If the VPN client stops or the routing table changes, the service may still find a route through the ordinary network.
+  pyload:
+    network_mode: "service:gluetun"
 
-The second approach is more restrictive. The service has one network path and the gateway is responsible for the VPN connection. If the connection is down, the service has no usable route. This behaviour is preferable because it is observable and safe.
+  qbittorrent:
+    network_mode: "service:gluetun"
+```
 
-Therefore, the second approach was selected.
+This is more restrictive than connecting all three services to the same Docker network. `network_mode: "service:gluetun"` means that pyLoad and qBittorrent do not receive a separate network interface, IP address, default route, or published ports. They use the interfaces and routing table of the Gluetun container.
+
+The ports for the two web interfaces are therefore published on Gluetun, not on the download clients. This looks slightly unusual in a Compose file but makes the network boundary explicit: Gluetun is the only container with external connectivity.
+
+## Why the kill switch belongs to Gluetun
+
+Gluetun manages the VPN connection and its firewall rules. When the tunnel is established, traffic from the shared namespace can leave through the VPN. When the tunnel is unavailable, the firewall blocks outbound traffic instead of allowing the normal Docker route.
+
+The resulting behaviour is intentionally asymmetric:
+
+- When the VPN is available, both download clients work normally.
+- When the VPN is unavailable, both download clients lose outbound connectivity.
+
+The second state is the important one. A failed download is visible and can be retried. A download which continues through the wrong network connection is harder to notice and defeats the purpose of the stack.
 
 ## Testing the failure case
 
-Testing only the successful VPN connection is not sufficient. It proves that the happy path works but says nothing about the actual requirement.
+The setup was verified in two states. First, the VPN connection was established and the clients could reach the internet through the shared Gluetun namespace. Then the VPN connection was interrupted. The clients were no longer able to reach the same destination.
 
-The setup was tested in two states:
-
-- With the VPN connection established, the service can reach its intended destination.
-- With the VPN connection unavailable, the service cannot reach the destination through another path.
-
-The second test is the relevant one. It verifies that the network boundary still exists when the dependency fails.
+This test is more useful than checking the VPN IP address once. It verifies that the clients do not have an independent fallback route.
 
 ## Result and limitations
 
-The resulting setup is intentionally small: one service and one dedicated network path. It does not need a proxy, dynamic routing, or a custom recovery mechanism for this use case.
+The final setup needs no custom routing scripts, proxy, or additional Docker network. Gluetun is the only container which handles external networking; pyLoad and qBittorrent only share its namespace and the download directory.
 
-This approach is useful whenever a fallback would be unsafe. The same principle applies to backups, authentication, and automation: a fallback is only useful if it preserves the original constraint.
-
-The limitation is clear as well. If availability during a VPN outage becomes a requirement, the solution needs another VPN gateway or a different network design. Until then, a service which stops working is preferable to one which works on the wrong network.
+The trade-off is deliberate: a VPN outage also stops downloads. If the system later needs to remain available during an outage, it needs a second VPN gateway or a different network design. Until then, a stopped download is the correct failure mode.
