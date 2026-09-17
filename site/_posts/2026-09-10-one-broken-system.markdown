@@ -2,62 +2,81 @@
 layout: post
 title: "When Twenty Low-Battery Alerts Mean One Broken System"
 date: 2026-09-10 10:00:00 +0200
-categories: systems diagnostics
-excerpt: "A noisy alert storm is not evidence of twenty independent failures. Start with correlation, dependencies, and the source of truth."
+categories: systems diagnostics home-automation
+excerpt: "A group of battery sensors became unknown at the same time. The batteries were not the problem; the Zigbee integration was."
 ---
 
-A notification storm creates a powerful instinct: start clearing notifications.
+A Home Assistant installation started reporting low-battery and unavailable states for several unrelated Zigbee devices at the same time. Replacing batteries would have been the obvious reaction. It would also have changed nothing.
 
-Twenty devices report low batteries, so perhaps twenty batteries need replacing. It is a wonderfully concrete plan. It also happens to be a very efficient way to spend an afternoon fixing the wrong thing.
+The affected devices used different battery types and were located in different rooms. The common component was Zigbee2MQTT.
 
-The useful question is not *how many alerts arrived?* It is *what changed together?*
+## Initial situation
 
-## Alert volume is not independent evidence
+The alerts had three different forms:
 
-A system can produce many symptoms from one failed dependency. That is true for a production service, a CI pipeline, and the small collection of sensors that quietly run a home.
+- the original battery sensor became `unavailable`;
+- a derived percentage sensor became `unknown`;
+- the low-battery binary sensor became `unknown` as well.
 
-When many similar alerts arrive at once, the number is often less interesting than their timing. Batteries do not normally coordinate their decline. If a group of devices changes state within minutes, I first assume a shared cause:
+This matters because the last two states are not independent observations. They are calculated from the first one. Once the source sensor is unavailable, every template which depends on it can become unknown too.
 
-- a receiver or gateway stopped reporting useful data;
-- a source integration began returning an unknown value;
-- a deployment changed how state is interpreted; or
-- a derived automation turned a missing signal into a warning.
+The useful question was therefore not which batteries were low. It was which component supplied all of these battery values.
 
-This is not proof. It is simply the cheapest hypothesis to test before making twenty independent changes.
+## Check the shared dependency first
 
-## Follow the dependency chain backwards
+Home Assistant exposes the Zigbee2MQTT bridge connection as an entity. When the bridge connection was checked, it was `off`. That explained why battery values from different devices disappeared at the same time.
 
-Most alerts are derived state. A dashboard may show a low battery because an automation decided that an old or missing reading should be treated as low. The message is useful in normal operation, but it is not the source of truth.
+The investigation was reduced to a short sequence:
 
-So the investigation should move backwards:
+1. Compare the timestamps of the affected entities.
+2. Identify the integration shared by the devices.
+3. Check the bridge or integration state.
+4. Only inspect individual devices after the shared dependency is healthy again.
 
-1. Look for the first unusual timestamp, not the loudest notification.
-2. Group affected devices by the system that reports their data.
-3. Check whether healthy devices share the same path.
-4. Inspect the source state before changing any device.
+This order is useful for any integration which provides many entities. A broken bridge can produce dozens of broken sensors. The number of alerts does not tell us how many independent faults exist.
 
-This is deliberately boring. It is also much faster than replacing batteries, restarting everything, and hoping the alerts become embarrassed enough to stop.
+## Keep derived states honest
 
-## Separate the outage from the consequence
+A low-battery template should not turn an unavailable source into a low-battery warning. It should only report a low battery when it has a valid value to evaluate.
 
-A good monitoring setup distinguishes between a source failure and the warnings created by that failure.
+A generic Home Assistant template can make that distinction explicit:
 
-If telemetry is unavailable, a single, explicit message about the missing source is more valuable than a wall of downstream low-battery alerts. The former explains what to investigate. The latter makes the operator count problems that may not exist.
+{% raw %}
+```yaml
+template:
+  - binary_sensor:
+      - name: "Example device battery low"
+        state: >
+          {% set battery = states('sensor.example_device_battery') %}
+          {% if battery in ['unknown', 'unavailable'] %}
+            false
+          {% else %}
+            {{ battery | float(101) < 20 }}
+          {% endif %}
+```
+{% endraw %}
 
-That distinction matters because automation tends to be very literal. If an expression says “missing value means battery low”, it will faithfully report low batteries while the actual issue is that it cannot see the batteries at all.
+The `float(101)` default is deliberate. If a value is malformed, it evaluates above the threshold instead of silently becoming zero and creating another false alert.
 
-The fix may be as small as teaching the derived alert to recognise an unavailable source. More importantly, the monitoring should retain the original failure as a visible, actionable signal.
+This template does not hide the bridge outage. It only prevents the outage from being misrepresented as a collection of empty batteries.
 
-## Use correlation as a habit
+## Alert on the source as well
 
-The broader lesson is not specific to batteries or home automation. Repeated errors in an application, failed jobs in CI, or a fleet of offline devices all invite the same mistake: treating every notification as a separate ticket.
+The source failure needs its own alert. A bridge state can be monitored directly, separately from the individual battery sensors:
 
-Before acting, ask three questions:
+```yaml
+trigger:
+  - platform: state
+    entity_id: binary_sensor.zigbee_bridge_connection
+    to: "off"
+```
 
-- Did these symptoms start together?
-- What dependency do they share?
-- Which signal is closest to the real source?
+The actual entity name depends on the integration, but the pattern remains the same: alert once for the unavailable data source, then treat derived values as unavailable rather than inventing a more specific diagnosis.
 
-Sometimes the answer really is twenty batteries. But correlation is cheap, and it protects the most valuable operational resource: attention.
+## Result and limitations
 
-The goal is not fewer alerts at any cost. It is alerts that preserve the story of the failure well enough for someone to fix the right system first.
+After the Zigbee2MQTT bridge was restored, the affected battery sensors recovered without replacing batteries. The immediate problem was one integration failure, not a fleet of devices.
+
+The template pattern has a limitation. It prevents false low-battery alerts while a source is unavailable, but it does not tell us why the source failed. That remains the responsibility of the integration alert, logs, and the bridge health check.
+
+Both alerts are useful: the bridge alert identifies the system to fix; the battery alert identifies a real battery to replace. They should not try to do each other's job.
