@@ -31,12 +31,20 @@ services:
 
   service1:
     network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
 
   service2:
     network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
 ```
 
 This is more restrictive than connecting all three services to the same Docker network. `network_mode: "service:gluetun"` means that service1 and service2 do not receive a separate network interface, IP address, default route, or published ports. They use the interfaces and routing table of the Gluetun container.
+
+`depends_on` with `condition: service_healthy` prevents both services from starting before Gluetun reports a healthy connection. It is a startup guard, not the kill switch: Gluetun's firewall still blocks traffic when an established tunnel later disappears.
 
 The ports for the two web interfaces are therefore published on Gluetun, not on the application services. This looks slightly unusual in a Compose file but makes the network boundary explicit: Gluetun is the only container with external connectivity.
 
@@ -53,9 +61,9 @@ The second state is the important one. A failed request is visible and can be re
 
 ## Testing the failure case
 
-The setup was verified in two states. First, the VPN connection was established and the clients could reach the internet through the shared Gluetun namespace. Then the VPN connection was interrupted. The clients were no longer able to reach the same destination.
+The setup was verified in two states. First, the VPN connection was established and service1 and service2 could reach the internet through the shared Gluetun namespace. Then the VPN connection was interrupted. Neither service could reach the same destination.
 
-This test is more useful than checking the VPN IP address once. It verifies that the clients do not have an independent fallback route.
+This test is more useful than checking the VPN IP address once. It verifies that service1 and service2 do not have an independent fallback route.
 
 ## Result and limitations
 
