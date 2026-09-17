@@ -3,52 +3,51 @@ layout: post
 title: "The Kill Switch Is the Feature, Not the VPN"
 date: 2026-09-17 10:00:00 +0200
 categories: systems reliability
-excerpt: "A secure network path is only useful when its failure mode is safe. Design the negative case first, then prove it."
+excerpt: "A service which must use a VPN needs one important property: it must not use the ordinary network when the tunnel is unavailable."
 ---
 
-“Route it through a VPN” sounds like a networking task. Usually, it is really a failure-mode task.
+A service which should use a VPN must be able to reach the internet through the VPN. This is the obvious requirement. There is a second requirement which is at least as important: the service must not use the ordinary network when the VPN connection is unavailable.
 
-A service that should use a private tunnel has one important requirement: when the tunnel disappears, it must not quietly use the ordinary network instead. The happy path is easy to demonstrate. The safety property lives in the unhappy one.
+The VPN connection itself is therefore only a part of the solution. The more important part is the failure case.
 
-## Start with what must never happen
+## Initial situation
 
-It is tempting to begin with a diagram: service, network, VPN gateway, perhaps a reverse proxy. That describes normal operation, but it does not answer the useful question:
+The starting point was a small self-hosted service which should only communicate through a VPN connection. The service is useful only if this restriction is reliable. A normal network fallback would make the setup look operational while violating its actual purpose.
 
-> If the tunnel is down, where can this service still send traffic?
+The following requirement was defined:
 
-“Nowhere” is a far stronger answer than “it should prefer the tunnel.” Preference is policy. Structural containment is a guarantee.
+> The service must be unavailable when the VPN connection is unavailable.
 
-This is the small but important difference between a configuration that usually works and a system that fails safely.
+This is a deliberate trade-off. Availability is reduced in one failure case in order to retain the intended network boundary.
 
-## Make the unsafe path impossible
+## Possible approaches
 
-The simplest useful design gives the service only one network route: a dedicated gateway that owns the tunnel. It does not receive direct access to the normal network.
+There are several ways to connect a service to a VPN. The two relevant approaches were:
 
-That means a tunnel failure makes the service unavailable rather than exposed. Availability has been traded for a constraint, deliberately.
+1. Give the service access to the normal network and configure the VPN as its preferred route.
+2. Give the service access only to a dedicated VPN gateway.
 
-The pattern is not limited to networking:
+The first approach is easier to set up. It also requires trusting the routing configuration in every failure case. If the VPN client stops or the routing table changes, the service may still find a route through the ordinary network.
 
-- a backup job should fail rather than write unencrypted data to an unexpected location;
-- an authentication flow should deny access rather than accept an unverified identity provider response;
-- an automation should stop rather than guess when a safety sensor becomes unavailable.
+The second approach is more restrictive. The service has one network path and the gateway is responsible for the VPN connection. If the connection is down, the service has no usable route. This behaviour is preferable because it is observable and safe.
 
-A fallback is not automatically resilient. It can be an invisible way to discard the very boundary the system was meant to enforce.
+Therefore, the second approach was selected.
 
-## Test the negative case
+## Testing the failure case
 
-A design like this deserves one boring test: remove the dependency and observe that the unsafe action does not occur.
+Testing only the successful VPN connection is not sufficient. It proves that the happy path works but says nothing about the actual requirement.
 
-For a networked service, that means checking both sides:
+The setup was tested in two states:
 
-1. With the tunnel available, the service can reach its intended destination.
-2. With the tunnel unavailable, the service cannot reach that destination through any other path.
+- With the VPN connection established, the service can reach its intended destination.
+- With the VPN connection unavailable, the service cannot reach the destination through another path.
 
-The second check is the feature. Without it, the configuration only proves that the pleasant demonstration worked once.
+The second test is the relevant one. It verifies that the network boundary still exists when the dependency fails.
 
-## Keep the first version small
+## Result and limitations
 
-The first implementation does not need a control plane, dynamic routing, or a clever recovery script. A local service, one constrained network path, and a negative test are enough to establish the safety property.
+The resulting setup is intentionally small: one service and one dedicated network path. It does not need a proxy, dynamic routing, or a custom recovery mechanism for this use case.
 
-More machinery may become worthwhile later—for observability, multiple services, or high availability. But it should earn its place by protecting the same invariant, not by making the container diagram more impressive.
+This approach is useful whenever a fallback would be unsafe. The same principle applies to backups, authentication, and automation: a fallback is only useful if it preserves the original constraint.
 
-A good kill switch feels almost disappointing in normal operation. That is rather the point. Its value appears only when something else has already gone wrong.
+The limitation is clear as well. If availability during a VPN outage becomes a requirement, the solution needs another VPN gateway or a different network design. Until then, a service which stops working is preferable to one which works on the wrong network.
