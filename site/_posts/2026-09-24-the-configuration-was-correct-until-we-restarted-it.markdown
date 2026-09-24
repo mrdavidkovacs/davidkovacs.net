@@ -16,7 +16,7 @@ That looked like the end of the incident. It was not.
 
 ## The configuration that was actually running
 
-The dashboard uses Docker Compose. Its API gateway reads a declarative configuration file from a bind mount. That file contains Key Auth credentials for the dashboard service and anonymous client.
+The dashboard uses Docker Compose. An Ansible deployment role prepares its stack directory from repository files and encrypted Vault values, then Docker Compose recreates containers from those files. Its API gateway reads a declarative configuration file from a bind mount. That file contains Key Auth credentials for the dashboard service and anonymous client.
 
 The running gateway had been repaired with the current credentials. A request through the gateway returned `200`. The same request had previously been rejected with `401 Unauthorized`.
 
@@ -51,7 +51,7 @@ This is why "works now" is weaker evidence than "works after recreation from dec
 
 The API keys were already managed as encrypted Ansible Vault variables. The missing step was using those variables when generating the gateway file.
 
-The static file became a Jinja template. The deployment role renders the final `kong.yml` as a protected stack file instead of copying a file with placeholders:
+The static file became a Jinja template. `stack_secret_files` is the deployment role's list of rendered secret files; it renders the final `kong.yml` as a protected stack file instead of copying a file with placeholders:
 
 {% raw %}
 ```yaml
