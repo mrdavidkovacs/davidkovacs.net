@@ -38,8 +38,6 @@ No replacement repository. No kernel-module installation. No attempt to make a p
 
 The verification mattered more than the deletion. Seeing a USB device in `lsusb` only confirms that the host can see it. The relevant check is that Frigate starts, remains healthy, and reports its TPU detector as available.
 
-The public infrastructure change contains the exact cleanup.[4]
-
 ## Why the distinction matters
 
 An APT source, a device driver, a runtime library, and a container device mapping are different layers. They may once have been installed together, but that does not make them permanent dependencies of one another.
@@ -53,4 +51,3 @@ This is a useful maintenance rule for self-hosted systems: when an update fails 
 1. [Frigate: Coral hardware guidance](https://docs.frigate.video/frigate/hardware/#google-coral-tpu)
 2. [Frigate detector configuration](https://docs.frigate.video/configuration/object_detectors/)
 3. [Debian: sources.list manual](https://manpages.debian.org/bookworm/apt/sources.list.5.en.html)
-4. [Infrastructure cleanup pull request](https://github.com/mrdavidkovacs/infra/pull/259)
