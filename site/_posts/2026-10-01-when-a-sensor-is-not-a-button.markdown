@@ -41,11 +41,12 @@ Conceptually, the automation has this shape:
 start when:
   - vibration is observed
   - automation is globally enabled
-  - the sun is within the glare range
+  - the sun is above the horizon
 
 actions:
   - mark the shading session active
-  - apply the glare-shading action
+  - if the sun is already within the glare range:
+      apply the glare-shading action
 ```
 
 The helper is the boundary. It records the decision that has already been made, rather than preserving every event which contributed to it.
@@ -70,7 +71,7 @@ actions:
   - release the glare-shading action
 ```
 
-The delay is not intended to make the system slower. It makes the end condition conservative around a discretely evaluated or imperfectly calibrated threshold. A session should end because the glare period has ended, not because the model observed one boundary value.
+The delay is not intended to make the system slower. It rejects brief boundary crossings caused by changing light conditions or an imprecise threshold. A session should end because the glare period has ended, not because the model observed one transient value.
 
 ## The disable switch must remain authoritative
 
@@ -82,7 +83,7 @@ This is more useful than trying to encode every exceptional situation into the g
 
 A restart can interrupt the interval between the end threshold and the delayed close. It can also happen while the helper says that a session is active.
 
-The automation therefore includes a startup reconciliation path. After Home Assistant starts, it reads the bounded session state and evaluates the current sun-vector condition again. A session outside the relevant sun window is cleared. A session within the valid range remains active, reapplies the glare-shading action, and continues to watch for the normal end condition.
+The automation therefore includes a startup reconciliation path. After Home Assistant starts, it reads the bounded session state and evaluates the current sun-vector condition again. A session beyond the relevant sun window begins the same fifteen-minute end check. A session before or within the valid range remains active and continues to watch for the normal end condition.
 
 This avoids relying on a missed state transition before the restart. Recovery is based on current state and current environment, not on an event which may no longer be available.
 
