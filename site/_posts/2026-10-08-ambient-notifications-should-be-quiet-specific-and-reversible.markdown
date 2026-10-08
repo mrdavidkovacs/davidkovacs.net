@@ -3,100 +3,122 @@ layout: post
 title: "Ambient Notifications Should Be Quiet, Specific, and Reversible"
 date: 2026-10-08 16:30:00 +0200
 categories: home-automation systems wled
-excerpt: "A household reminder does not need another alert. A segmented WLED indicator can carry one useful status without taking over the room or leaving stale state behind."
+excerpt: "A bin-collection reminder needed to be visible in the kitchen without sending another alert, taking over the light, or leaving a stale colour behind."
 ---
 
-A household reminder can be technically correct and still be unpleasant.
+A bin-collection reminder already existed in Home Assistant as binary sensors. The missing part was making it useful where the decision happens: in the kitchen, while someone is already there.
 
-A phone notification interrupts whoever receives it. A spoken announcement interrupts everyone. A flashing light is excellent at being noticed, which is usually the problem. For a recurring status that matters only when someone is already in the relevant room, the better interface is often an ambient one.
+A phone notification was not the right answer. It interrupts one person, can be dismissed at the wrong moment, and is easy to miss when the relevant task happens later. Turning on a lamp or using an animated WLED effect was not right either. The kitchen light should remain a light, not become an alarm system.
 
-I wanted a reminder visible on an existing WLED strip while the room lighting was already in use. It had to be noticeable in normal room light, support more than one status at once, and disappear reliably when the source status ended. It also had to leave ordinary lighting controls alone.
+The goal was specific:
 
-That last requirement rules out a surprising number of simple automations.
+- show the active collection category on the existing kitchen WLED strip;
+- do not turn the strip on just to display the reminder;
+- keep the normal wall-control and presence-lighting behaviour intact;
+- support two collection categories on the same day;
+- clear the display reliably when the reminder is no longer active.
 
-## Start with the decision, not the device
+## Problem
 
-The useful question was not "how can this LED strip notify me?" It was "what decision should the reminder support?"
+The WLED strip already had two useful behaviours:
 
-The answer was small: when someone enters the room and an existing household reminder is active, show which category needs attention. Do not wake the room up to announce it. Do not replay an animation every time motion is detected. Do not require anyone to understand several internal WLED segment entities to turn on a normal light.
+1. a normal main light entity used by the room controls;
+2. a short startup playlist when the light turns on.
 
-The status already existed as Home Assistant binary sensors. They define the reminder window and become the only source of truth for the display. The WLED automation only renders their current state.
+The first attempt used small dedicated WLED segments for the collection status. It was technically correct, but not visible enough in a normally lit kitchen. A reminder that requires looking for it is not a reminder.
 
-This makes the display disposable. If the source state is off, there is nothing for the strip to remember.
+There was also a lifecycle problem. The collection sensors can change while the kitchen light is already on. Home Assistant can restart while a reminder is active. A simple presence automation cannot cover both cases without mixing two unrelated jobs: deciding when to turn the room light off, and deciding which status the display should show.
 
-## Preserve normal lighting first
+## Possible approaches
 
-The strip already had a normal startup playlist and a main light entity used by the room controls. The reminder must not replace either.
+### Phone notification
 
-The presence automation therefore has two paths:
+This is the default Home Assistant solution: send a notification when the collection date is near.
 
-1. If the main light is off, turn on the normal main entity, start its usual playlist, wait for it to finish, then render the reminder.
-2. If the main light is already on, render the reminder only when a source sensor is active.
+It is useful for urgent or remote information. This status was neither. It only mattered when someone was already in the kitchen and about to act. Adding another phone interruption would solve delivery, but not timing or attention.
 
-The important condition is what the status automation does *not* do: it never turns on the strip by itself.
+### Turn the WLED strip on automatically
+
+The strip could light up whenever a collection sensor becomes active.
+
+That makes the status impossible to miss, but it also lights an empty room and turns a passive reminder into an unsolicited action. The light may be off deliberately. The automation should not override that decision.
+
+### A permanent small segment marker
+
+A dedicated LED segment seems simple because it does not affect the rest of the strip.
+
+In practice, the marker was too small to be useful. The strip had enough space for a clear visual signal, so hiding the information in a tiny segment was the wrong trade-off.
+
+### One presence automation that does everything
+
+It would be possible to evaluate collection sensors, start the playlist, render segments, reset colours, and manage the inactivity timer in one large automation.
+
+That creates an avoidable coupling. A collection-status update while the kitchen is occupied could restart the inactivity timer. A Home Assistant restart would need special handling inside the same state machine. The result works until a harmless change in one concern breaks the other.
+
+## Solution
+
+The deployed solution uses the existing collection sensors as the source of truth and treats the WLED strip as a renderer.
+
+When presence turns the kitchen light on, the automation starts the normal playlist. After a conservative delay, it calls a dedicated script that renders the current collection state.
+
+When the light is already on, presence does not replay the playlist. It renders the current state only if a collection sensor is active.
 
 ```yaml
-# Pseudocode: semantic names only.
-when reminder_status_changes:
-  if main_light is on:
-    render_reminder()
+# Pseudocode: identifiers are deliberately generic.
+when presence becomes active:
+  if main_light is off:
+    turn_on(main_light)
+    select_playlist("Startup")
+    wait_for_playlist_to_finish()
+    render_collection_status()
+
+  if main_light is on and collection_status_is_active:
+    render_collection_status()
 ```
 
-This keeps the reminder contextual. A status can become active in the afternoon without turning on a visible signal in an empty room. The next ordinary use of the room lighting makes it available.
+The collection-status automation is separate. It reacts when one of the binary sensors changes and when Home Assistant starts. It renders only when the main kitchen light is already on.
 
-It also keeps the normal control path simple. The main light remains the thing that people and wall controls operate. Segments remain an implementation detail.
+```yaml
+when collection_status_changes or Home_Assistant_starts:
+  wait_for_integrations_after_startup_if_needed()
 
-## Render one stable banner
+  if main_light is on:
+    render_collection_status()
+```
 
-The first version used small, dedicated segments. It was logically correct but too subtle in a real room. A status indicator that cannot be noticed without inspecting it is merely decorative telemetry.
+This is the important boundary: collection status can update the indicator, but it cannot turn on the room light or interfere with the presence automation's inactivity timer.
 
-The better compromise was to use two long middle segments as a static banner. One active reminder gives both segments the same colour. A known double case gives each segment its own colour. The display has enough visual weight to be visible, but it is still a quiet part of the existing light rather than a new light show.
+### Rendering the status
 
-Before applying colours, the automation selects a stable WLED preset that restores the intended segment layout:
+The renderer first selects a WLED preset named `Segments`. That restores the known segment layout and clears any old colour state. It then waits briefly for the WLED entities to settle before applying a static colour to the two long middle segments.
+
+One active category uses the same colour across both segments. A known double collection day uses one colour on each segment.
 
 ```yaml
 sequence:
-  - action: select.select_option
-    target:
-      entity_id: select.wled_indicator_preset
-    data:
-      option: Segments
-  - delay:
-      seconds: 2
+  - select_preset("Segments")
+  - wait_for_segment_entities()
   - choose:
-      - conditions: "two source statuses are active"
-        sequence: "render one colour on each middle segment"
-      - conditions: "one source status is active"
-        sequence: "render its colour on both middle segments"
+      - when: two_categories_are_active
+        do: render_one_colour_per_middle_segment
+      - when: one_category_is_active
+        do: render_its_colour_on_both_middle_segments
 ```
 
-The preset reset is not incidental. It clears any previous banner state before applying the next one. Without that explicit reset, a prior double-status display can leak into a later single-status display. Household automations acquire folklore quickly when old state is allowed to survive without an owner.
+This is deliberately static. The status is visible in normal room light, but it does not flash, animate indefinitely, or compete with people in the room.
 
-WLED's segment model is well suited to this: the strip can retain its ordinary layout while Home Assistant changes only the two display areas. [WLED segments](https://kno.wled.ge/features/segments/) and [presets](https://kno.wled.ge/features/presets/) provide the device-side structure; Home Assistant supplies the current decision.
+WLED provides the segment and preset model; Home Assistant only selects the active layout and colours. [WLED segments](https://kno.wled.ge/features/segments/) and [presets](https://kno.wled.ge/features/presets/) are the relevant device-side features.
 
-## Keep detection and rendering separate
+## Why this solution holds up
 
-A tempting design is to place every condition inside the presence automation. That works until a source status changes while the room is already occupied, or Home Assistant restarts while the indicator should still be visible.
+The solution has three useful properties.
 
-The deployed design has a separate status synchronisation automation. It reacts to source-sensor changes and to Home Assistant startup. On startup it waits briefly for integrations to become ready, then renders only if the main light is already on and at least one source status is active.
+First, it is contextual. The indicator appears when the kitchen light is already being used. It does not illuminate an empty room or add a phone alert.
 
-This separation avoids a more subtle failure mode: a status update should not cancel the presence automation's inactivity wait. The presence automation owns the question "when should normal room lighting turn off?" The status automation owns the question "what should the current indicator show?"
+Second, it keeps normal control paths intact. The main light entity remains the control surface for presence automation, wall controls, and manual use. The internal segment entities are not exposed as a second user interface.
 
-Those are different lifecycles. Giving them separate owners avoids one innocent state update restarting an unrelated timer.
+Third, it is reversible. When the source sensors turn off, the renderer restores the stable `Segments` preset and does not apply a banner. The next time the light turns on, it starts with the normal playlist again.
 
-## Reset behaviour is part of the feature
+There is no counter of notifications, no queue of old collection states, and no helper that tries to reconstruct what should be displayed after a restart. The current binary-sensor state is enough.
 
-A reminder is not complete when it turns on. It is complete when it stops being true.
-
-The source binary sensors own that boundary. When their reminder window ends, they turn off. The status automation sees the change, restores the stable segment preset, and no longer applies a banner. Future presence events start the normal lighting path again.
-
-There is no counter of notifications sent, no queue of pending colours, and no long-lived helper trying to reconstruct history after a restart. The current source state is enough.
-
-That is the useful constraint for ambient notifications:
-
-- show only information that is currently actionable;
-- use the lowest-attention channel that works in context;
-- preserve the normal control path;
-- make stale state impossible rather than hoping it gets cleaned up later.
-
-The strip is still a light. The notification is only a small, reversible layer on top of it.
+That is the rule I would use for similar Home Assistant indicators: make the source state authoritative, render it only in the right context, and explicitly define how the display returns to normal.
