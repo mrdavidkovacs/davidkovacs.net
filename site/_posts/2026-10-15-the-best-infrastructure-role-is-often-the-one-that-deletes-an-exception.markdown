@@ -3,72 +3,97 @@ layout: post
 title: "The Best Infrastructure Role Is Often the One That Deletes an Exception"
 date: 2026-10-15 11:00:00 +0200
 categories: systems ansible monitoring operations
-excerpt: "A monitoring exception was correct for one cluster node. When a second node needed it, the exception had become a rule and the role needed to model it once."
+excerpt: "A Wazuh ignore rule was correct for one Proxmox node. When a second node needed it, the exception had become a rule that the Ansible role needed to express once."
 ---
 
-A monitoring configuration on one node had accumulated a small exception for a cluster-managed runtime file. It was sensible at the time. The file changed frequently for operationally normal reasons, so treating every change as a security event created noise rather than signal.
+Wazuh was reporting file-integrity changes for one Proxmox cluster status file during normal operation. The file was expected to change, so I had ignored that exact path on the first node.
 
-Then a second node needed the same exception.
+Then the second Proxmox node started producing the same alerts.
 
-That was the point where the original line stopped being an exception. It had become a rule, disguised as a hostname.
+The fix was not to add another ignored path. The role had encoded one hostname where it should have encoded the rule that produces the path.
 
 ## Problem
 
-The first version of the configuration ignored one exact path. It worked because there was one relevant machine. The second machine had the same directory structure, but its node-specific path was different.
+The Wazuh agent watches configured files and directories for changes. One cluster runtime-status file changes whenever the cluster does normal work. That made it a bad security signal: the alert was technically correct, but operationally useless.
 
-The tempting fix was to add another literal path. That would have solved the immediate problem, but it would also have created a list that needed updating every time the cluster changed.
+The original Wazuh configuration contained one literal ignore entry:
+
+```text
+/etc/pve/nodes/pve-a/lrm_status
+```
+
+That worked while the cluster had one managed node. A second node used the same layout, but with a different node name:
+
+```text
+/etc/pve/nodes/pve-b/lrm_status
+```
+
+Adding another literal line would have fixed the new alert. It would also have created a list that needed manual edits every time the cluster changed.
 
 The actual requirement was narrower:
 
-- ignore a small set of known, operationally noisy cluster files;
+- ignore three known, noisy cluster files;
 - derive only the node-specific part from the managed host;
-- remove the old literal exception instead of keeping both versions forever;
-- avoid turning every later Ansible run into a configuration change and service restart.
+- migrate the old literal exception once;
+- leave later Ansible runs unchanged, without restarting Wazuh unnecessarily.
 
 ## Possible approaches
 
-### Keep adding host-specific lines
+### Add one more host-specific line
 
-This is the smallest immediate change. It is also the beginning of a list that nobody wants to own. Every new node becomes another edit, another review, and another opportunity to miss one place where the rule was copied.
+This is the smallest immediate change. It is also the start of a list that nobody wants to maintain. Every new node becomes another edit and another chance to forget the matching monitoring rule.
 
-### Ignore an entire directory
+### Ignore the whole node directory
 
-This is operationally easy, but too broad. A directory that contains one noisy runtime file can also contain changes that are worth watching. Reducing alert noise by hiding unrelated changes is not a useful trade.
+This would be easy, but too broad. The directory can contain changes worth investigating. Reducing alert noise by hiding unrelated changes is not a useful trade.
 
-### Use a broad wildcard
+### Use a wildcard
 
-A wildcard is better than repeating node names, but it still needs careful thought. If the cluster layout changes, a broad expression can silently cover more than intended. In monitoring configuration, silence is often harder to notice than a false positive.
+A wildcard avoids repeating node names, but it can silently cover more than intended when the cluster layout changes. In monitoring configuration, an overly broad ignore is often worse than an extra alert.
 
-### Model the invariant
+### Model the rule once
 
-The useful invariant was simple: every managed node has the same two shared noisy files and one node-local noisy file. Ansible already knows the current inventory hostname, so the role can derive the one variable segment from that fact.
-
-That produces one narrow rule for every node rather than a growing historical list.
+Every managed node has the same two shared noisy files and one node-local file. In this inventory, `inventory_hostname` is deliberately the same name Proxmox uses below `/etc/pve/nodes/`. The role can therefore construct the one variable path from the host it is configuring.
 
 ## Solution
 
-The final role keeps the fixed paths explicit and derives only the node name:
+The role keeps the fixed paths explicit and derives only the node name:
 
 {% raw %}
 ```yaml
-monitoring_fim_ignores:
-  - /etc/cluster/ha/commands
-  - /etc/cluster/ha/status
-  - "/etc/cluster/nodes/{{ inventory_hostname }}/runtime-status"
+wazuh_agent_proxmox_fim_ignores:
+  - /etc/pve/ha/crm_commands
+  - /etc/pve/ha/manager_status
+  - "/etc/pve/nodes/{{ inventory_hostname }}/lrm_status"
 ```
 {% endraw %}
 
-The role writes those paths as an Ansible-managed block in the monitoring agent configuration. The marker matters. It gives the role an ownership boundary: on the first run it removes the old literal line, then adds the managed block. On later runs it sees its own marker and leaves the managed entry alone.
+The role writes those entries with Ansible's `blockinfile`, between stable markers in the Wazuh configuration. Those markers make the ownership boundary explicit.
 
-That last detail is easy to miss. A cleanup expression that matches both the old line and the new generated line is technically correct once, but non-idempotent forever. The next run removes the managed line, adds it back, and restarts the agent for no operational reason.
+The migration happens only before that managed block exists:
 
-A configuration-management role is not finished when it reaches the desired file once. It is finished when the second run is boring.
+1. remove the old host-specific `lrm_status` line;
+2. insert the managed block with the inventory-derived path;
+3. skip the cleanup on every later run.
 
-## Validation is part of the change
+That guard matters. The first version of the cleanup matched any `lrm_status` ignore line. After the managed block existed, it also matched the line that Ansible had just generated. Every subsequent run removed the managed line, added it back, and notified the Wazuh restart handler.
 
-The role makes a temporary backup before editing the configuration. It restores that backup and stops if validation fails. This is deliberately unglamorous. A monitoring agent that keeps running with its old configuration is preferable to an agent that fails on its next restart because a generated file was invalid.
+The resulting configuration was correct, but the role was not idempotent. A converged host still restarted its monitoring agent on every run.
 
-The validation is split by responsibility:
+A role is not finished when it reaches the desired file once. It is finished when the second run is boring.
+
+## Validate the change before restarting the agent
+
+The rollout uses a small, explicit sequence:
+
+1. copy the current Wazuh configuration to a temporary backup;
+2. write the client and file-integrity changes;
+3. validate the Wazuh agent configuration;
+4. validate the file-integrity configuration;
+5. restore the backup and stop if either validation fails;
+6. restart one agent, then continue to the next host.
+
+The two checks are separate because the role changes two separate concerns:
 
 ```yaml
 - ansible.builtin.command: /var/ossec/bin/wazuh-agentd -t
@@ -78,28 +103,31 @@ The validation is split by responsibility:
   changed_when: false
 ```
 
-The first command validates the agent-side client configuration. The second validates the file-integrity section that was changed. Wazuh documents both local configuration validation and the file-integrity daemon separately.[1][2]
+`wazuh-agentd -t` checks the agent-side client configuration. `wazuh-syscheckd -t` checks the file-integrity section that contains the new ignore rules.[1][2]
 
-The rollout also runs one managed node at a time. A package update or a handler restart should not take every monitoring agent down together simply because the inventory happened to contain two hosts.
+The playbook also uses `serial: 1`. A package action or handler restart affects one agent at a time, not every monitoring agent in the inventory together.
 
-Finally, the result was checked from both sides: the agents were running and connected after the rollout, and the manager reported both as active.
+## Verification
+
+The first node exercised the migration path: the old literal ignore was removed, the managed block was inserted, both validation commands passed, and the agent restarted successfully.
+
+The second node exercised the fresh-host path: the agent package was installed, enrolled, validated, and started. Afterwards both agents reported as connected, and the Wazuh manager listed both as `Active`.
+
+That checks more than whether the YAML parsed. It verifies the generated configuration, the running agent, and the manager-side view of the agent.
 
 ## Why this solution holds up
 
-The role is still small. It does not introduce a generic cluster abstraction, a data model for every possible monitored path, or a wildcard broad enough to surprise us later.
+The role owns three known paths and nothing broader:
 
-It does encode the real rule:
+1. two shared cluster files;
+2. one node-local runtime-status file derived from the configured host;
+3. one migration path from the historical literal exception.
 
-1. the common paths are common;
-2. the node-local path belongs to the current inventory host;
-3. the historical exception is migrated once;
-4. subsequent runs converge without a restart.
-
-That is usually the threshold worth aiming for in infrastructure code. Generalise the part that has demonstrably repeated. Leave everything else alone.
+It does not ignore an entire directory. It does not need a hostname list. It does not restart a healthy agent after every converged run.
 
 ## Limitation
 
-This is intentionally specific to these known file-integrity exceptions. If the cluster gains another dynamically named path, it should be added as a reviewed rule with the same narrowness. The answer is not to turn the whole directory into an ignore pattern just to avoid writing one more explicit line.
+This is intentionally specific to the current, documented path pattern. If the cluster gains more dynamic paths than these three known exceptions, the next step is an explicit reviewed data structure for those paths. It is not a wildcard for the entire directory.
 
 ## References
 
