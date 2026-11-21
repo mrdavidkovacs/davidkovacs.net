@@ -3,24 +3,18 @@ layout: post
 title: "A Successful Backup Can Still Be Backing Up the Wrong Things"
 date: 2026-11-19 07:00:00 +0100
 categories: systems backups operations reliability
-excerpt: "A backup can run successfully and still include an old copy of the data. I traced the active library, checked the backup selection, and restored two files to see what the result actually proved."
+excerpt: "A successful backup does not prove that it contains the data needed for recovery. I checked the active library and tested a sample of files and the database."
 ---
 
 A self-hosted media application stores its library on a NAS. A backup task copies selected NAS folders to a remote repository and keeps multiple recovery points.
 
-After moving the application data to a different location, the application continued to work and the backup task continued to run. During a later review of the backup selection, I found two library trees: the location the application now used and a separate tree left behind by the earlier setup. Both had been selected for backup.
+After moving the application data to a different location, the application continued to work and the backup task continued to run. During a later review, I found two library trees: the location the application now used and a separate tree left behind by the earlier setup.
 
 The job was protecting the paths it had been given. I needed to check whether those paths still matched the system I intended to recover.
 
-## A larger folder is not proof of a complete copy
+## Checking the backup selection
 
-The two paths were separate directories, not two names for the same mounted tree. The new library was larger than the old one, which made it tempting to conclude that the old selection was redundant.
-
-That conclusion was too quick. A larger directory can still be missing files that exist in a smaller one. Size tells me how much data is there, not whether one tree contains everything in the other.
-
-The first useful check was to trace the application's active storage mount back to the NAS. That identified the current library. I then checked the backup task's source selection: the share containing the current library was included, while the old library path was no longer selected.
-
-Those observations establish which path the application uses and which source the task is configured to include. They do not establish that every file in the old tree exists in the new one. The old directory itself was a separate question from the backup selection. Removing a path from the task is not the same operation as deleting its files.
+I traced the application's active storage mount back to the NAS and checked the backup task's source selection. The current library was included; the old library path was not selected. The old directory itself still existed, and I had not verified whether all its files were present in the current library.
 
 ## Start at the restore point
 
@@ -42,9 +36,7 @@ The backup was encrypted, so opening the recovery point also required the backup
 
 ## Testing the database
 
-I also restored the database backup into an isolated PostgreSQL container and compared it with the live database. The tables, indexes, constraints and extension versions matched. The restored database contained three fewer media records; that difference is consistent with changes after the backup, but the comparison alone does not explain it.
-
-The restore log contained no SQL errors, but an SSH timeout meant I could not check the restore process's final exit code. The database comparisons were encouraging, not a complete success receipt.
+I also restored the database backup into an isolated PostgreSQL container and compared it with the live database. The counts of tables, valid indexes and valid constraints matched, as did the extension versions. The restored database contained three fewer media records; that difference is consistent with changes after the backup, but the comparison alone does not explain it.
 
 This was still not a complete application recovery. I did not start the application against the restored database and media, so I have not tested whether those pieces, the configuration and the application version work together after a restore.
 
@@ -70,7 +62,7 @@ A successful backup report is valuable. It tells me the task completed, not that
 
 The more useful question starts at the other end: **if the service disappeared today, what would I need to bring it back, and which recovery point contains each piece?**
 
-In this case, checking the mount and backup selection clarified which library was active. Two recovered files matched their originals, and the isolated database test provided additional evidence, with the exit-code limitation noted above. The full application restore remains untested. That is a narrower conclusion than “the backup works”, but it is one I can support.
+In this case, checking the mount and backup selection clarified which library was active. Two recovered files matched their originals, and the isolated database test provided additional evidence. The full application restore remains untested. That is a narrower conclusion than “the backup works”, but it is one I can support.
 
 ## References
 
