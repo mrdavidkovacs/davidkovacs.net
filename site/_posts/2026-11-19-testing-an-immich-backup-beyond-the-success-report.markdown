@@ -8,7 +8,7 @@ excerpt: "A successful backup does not prove that it contains the data needed fo
 
 My self-hosted Immich instance stores its media library on a NAS. A backup task copies selected NAS folders to a remote repository and keeps multiple recovery points.
 
-After moving the application data to a different location, the application continued to work and the backup task continued to run. During a later review, I found two library trees: the location the application now used and a separate tree left behind by the earlier setup.
+After moving the application data to a different location, the application continued to work and the backup task continued to run. During a later review, I found two library trees: the location the application was now using and a separate tree left behind by the earlier setup.
 
 The job was protecting the paths it had been given. I needed to check whether those paths still matched the system I intended to recover.
 
@@ -20,7 +20,7 @@ I traced the application's active storage mount back to the NAS and checked the 
 
 A source selection describes what a task is configured to back up. To see what was actually available, I opened the latest recovery point marked successful and browsed the protected data.
 
-The active media tree was visible, including the library and a database-backup directory. A database backup created on the day of that recovery point was listed there. Seeing the file in the repository was useful evidence, but it was not a database restore.
+The active media tree and a database-backup directory were visible. A database backup created on the day of that recovery point was listed there. Seeing the file in the repository was useful evidence, but it was not a database restore.
 
 I then downloaded one photo and one video from that recovery point into a separate test directory. Both decoded successfully. For each file, I calculated a SHA-256 hash and compared it with the corresponding current original. Both pairs matched.
 
@@ -42,13 +42,13 @@ This was still not a complete application recovery. I did not start the applicat
 
 External libraries need their own attention too. Immich can refer to files outside its main upload directory. A backup of the application directory alone does not prove those sources are covered.
 
-The practical recovery checklist is therefore larger than the two samples:
+The practical recovery checklist goes beyond these sample checks:
 
 - identify the application's active media and any external libraries;
 - confirm that the relevant sources and a usable database backup are in the recovery point;
 - recover representative files into a separate location and check them;
 - keep the backup key and necessary configuration available independently;
-- test the application and database together when an isolated environment is available.
+- test the application with the restored database and media in an isolated environment.
 
 ## The useful question
 
