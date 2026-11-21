@@ -1,12 +1,12 @@
 ---
 layout: post
-title: "A Successful Backup Can Still Be Backing Up the Wrong Things"
+title: "Testing an Immich Backup Beyond the Success Report"
 date: 2026-11-19 07:00:00 +0100
 categories: systems backups operations reliability
 excerpt: "A successful backup does not prove that it contains the data needed for recovery. I checked the active library and tested a sample of files and the database."
 ---
 
-A self-hosted media application stores its library on a NAS. A backup task copies selected NAS folders to a remote repository and keeps multiple recovery points.
+My self-hosted Immich instance stores its media library on a NAS. A backup task copies selected NAS folders to a remote repository and keeps multiple recovery points.
 
 After moving the application data to a different location, the application continued to work and the backup task continued to run. During a later review, I found two library trees: the location the application now used and a separate tree left behind by the earlier setup.
 
@@ -40,7 +40,7 @@ I also restored the database backup into an isolated PostgreSQL container and co
 
 This was still not a complete application recovery. I did not start the application against the restored database and media, so I have not tested whether those pieces, the configuration and the application version work together after a restore.
 
-External libraries need their own attention too. A media application can refer to files outside its main upload directory. A backup of the application directory alone does not prove those sources are covered.
+External libraries need their own attention too. Immich can refer to files outside its main upload directory. A backup of the application directory alone does not prove those sources are covered.
 
 The practical recovery checklist is therefore larger than the two samples:
 
@@ -49,12 +49,6 @@ The practical recovery checklist is therefore larger than the two samples:
 - recover representative files into a separate location and check them;
 - keep the backup key and necessary configuration available independently;
 - test the application and database together when an isolated environment is available.
-
-## Retention is a separate decision
-
-Changing the source selection affects future backups. It does not mean the old source immediately disappears from every existing recovery point or that its occupied space is reclaimed at once. That depends on retention, rotation and how the backup system stores shared data between versions.
-
-The backup tool should manage that lifecycle. Deleting files directly inside its repository is not a shortcut to safe cleanup: it can damage the backup. Before shortening retention or removing versions, I want to know which recovery points remain and what they contain.
 
 ## The useful question
 
